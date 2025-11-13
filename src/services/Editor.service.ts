@@ -35,14 +35,12 @@ export class ImageEditorService {
 
         // Update canvas size
         this.webGPUCore.configureContext(managedTexture.width, managedTexture.height);
-
-        // this.render();
     }
 
     async runKuwaharaFilter(kuwaharaParams: KuwaharaParams) {
         await this.kuwahara.runKuwahara(kuwaharaParams);
 
-        this.render("structure_tensor");
+        this.render("vertical_blur");
     }
 
     private render(textureKey = "original"): void {

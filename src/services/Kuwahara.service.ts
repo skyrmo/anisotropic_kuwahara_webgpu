@@ -3,8 +3,7 @@ import { TextureManagerService } from "./Textures.service";
 import type { KuwaharaParams } from "../types/types";
 
 import structureTensorShaderCode from "../shaders/kuwahara/structure-tensor.wgsl?raw";
-// import updateShaderCode from "../shaders/slic/update.wgsl?raw";
-// import outputShaderCode from "../shaders/slic/output.wgsl?raw";
+import blurShaderCode from "../shaders/kuwahara/blur.wgsl?raw";
 
 export class KuwaharaService {
     private core: WebGPUCore;
@@ -12,11 +11,16 @@ export class KuwaharaService {
 
     // Pipelines
     private structureTensorPipeline!: GPUComputePipeline;
+    private blurHorizontalPipeline!: GPUComputePipeline;
+    private blurVerticalPipeline!: GPUComputePipeline;
 
     // Buffers
+    private kuwaharaParamsBuffer!: GPUBuffer;
 
     // Textures
     private structureTensorTexture!: GPUTexture;
+    private blurHorizontalTexture!: GPUTexture;
+    private blurVerticalTexture!: GPUTexture;
 
     // Parameters
     private kuwaharaParams!: KuwaharaParams;
@@ -31,7 +35,7 @@ export class KuwaharaService {
 
         // create pipelines
         const structureTensorShaderModule = device.createShaderModule({
-            label: "SLIC init centroids shader",
+            label: "Struc Tensor shader module",
             code: structureTensorShaderCode,
         });
 
@@ -41,6 +45,28 @@ export class KuwaharaService {
             compute: {
                 module: structureTensorShaderModule,
                 entryPoint: "computeMain",
+            },
+        });
+
+        // create pipelines
+        const blurShaderModule = device.createShaderModule({
+            label: "Blur shader module",
+            code: blurShaderCode,
+        });
+
+        this.blurHorizontalPipeline = device.createComputePipeline({
+            layout: "auto",
+            compute: {
+                module: blurShaderModule,
+                entryPoint: "horizontalMain",
+            },
+        });
+
+        this.blurVerticalPipeline = device.createComputePipeline({
+            layout: "auto",
+            compute: {
+                module: blurShaderModule,
+                entryPoint: "verticalMain",
             },
         });
     }
@@ -110,7 +136,100 @@ export class KuwaharaService {
         });
     }
 
-    private async runStructureTensorSmoothing(): Promise<void> {}
+    private async runStructureTensorSmoothing(): Promise<void> {
+        await this.gaussianBlurPass(true); // horizontal
+        await this.gaussianBlurPass(false); // vertical
+    }
+
+    async gaussianBlurPass(isHorizontal: boolean) {
+        const device = this.core.getDevice();
+
+        // Get input texture
+        const inputTexture = isHorizontal
+            ? this.textureManager.getTexture("structure_tensor")
+            : this.textureManager.getTexture("horizontal_blur");
+
+        if (!inputTexture) {
+            throw new Error(
+                `Input texture not found for ${isHorizontal ? "horizontal" : "vertical"} blur`,
+            );
+        }
+
+        // Create output texture
+        const outputTexture = device.createTexture({
+            size: { width: inputTexture.width, height: inputTexture.height },
+            format: "rgba16float",
+            usage:
+                GPUTextureUsage.STORAGE_BINDING |
+                GPUTextureUsage.TEXTURE_BINDING |
+                GPUTextureUsage.COPY_SRC,
+        });
+
+        // Create uniform buffer for kuwahara parameters
+        this.kuwaharaParamsBuffer = device.createBuffer({
+            size: 32, // 8 floats * 4 bytes
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
+        device.queue.writeBuffer(
+            this.kuwaharaParamsBuffer,
+            0,
+            new Uint32Array([
+                this.kuwaharaParams.kernelSize,
+                this.kuwaharaParams.sharpness,
+                this.kuwaharaParams.hardness,
+                this.kuwaharaParams.alpha,
+                this.kuwaharaParams.zeroCrossing,
+                this.kuwaharaParams.zeta,
+                this.kuwaharaParams.numSectors,
+                this.kuwaharaParams.numPasses,
+            ]),
+        );
+
+        // Execute blur pass with appropriate pipeline
+        const pipeline = isHorizontal
+            ? this.blurHorizontalPipeline
+            : this.blurVerticalPipeline;
+
+        const encoder = device.createCommandEncoder();
+        const pass = encoder.beginComputePass();
+        pass.setPipeline(pipeline);
+
+        pass.setBindGroup(
+            0,
+            device.createBindGroup({
+                layout: pipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: inputTexture.texture.createView() },
+                    { binding: 1, resource: outputTexture.createView() },
+                    { binding: 2, resource: { buffer: this.kuwaharaParamsBuffer } },
+                ],
+            }),
+        );
+
+        const workgroupsX = Math.ceil(inputTexture.width / 8);
+        const workgroupsY = Math.ceil(inputTexture.height / 8);
+        pass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        pass.end();
+
+        device.queue.submit([encoder.finish()]);
+        await device.queue.onSubmittedWorkDone();
+
+        // Store output
+        const textureKey = isHorizontal ? "horizontal_blur" : "vertical_blur";
+        if (isHorizontal) {
+            this.blurHorizontalTexture = outputTexture;
+        } else {
+            this.blurVerticalTexture = outputTexture;
+        }
+
+        this.textureManager.setTexture(textureKey, {
+            texture: outputTexture,
+            width: inputTexture.width,
+            height: inputTexture.height,
+            format: "rgba16float",
+        });
+    }
 
     private async runEigenvectorAnalysis(): Promise<void> {}
 
