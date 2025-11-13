@@ -1,21 +1,26 @@
 import { WebGPUCore } from "./WebGPU.service";
 import { RenderService } from "./Render.service";
 import { TextureManagerService } from "./Textures.service";
+import { KuwaharaService } from "./Kuwahara.service";
+import type { KuwaharaParams } from "../types/types";
 
 export class ImageEditorService {
     private webGPUCore: WebGPUCore;
     private renderer: RenderService;
     private textureManager: TextureManagerService;
+    private kuwahara: KuwaharaService;
 
     constructor() {
         this.webGPUCore = WebGPUCore.getInstance();
         this.renderer = new RenderService();
         this.textureManager = new TextureManagerService();
+        this.kuwahara = new KuwaharaService(this.textureManager);
     }
 
     async initialize(canvas: HTMLCanvasElement): Promise<void> {
         await this.webGPUCore.initialize(canvas);
         await this.renderer.initialize();
+        await this.kuwahara.initialize();
     }
 
     async loadImage(imageFile: File | Blob): Promise<void> {
@@ -31,7 +36,13 @@ export class ImageEditorService {
         // Update canvas size
         this.webGPUCore.configureContext(managedTexture.width, managedTexture.height);
 
-        this.render();
+        // this.render();
+    }
+
+    async runKuwaharaFilter(kuwaharaParams: KuwaharaParams) {
+        await this.kuwahara.runKuwahara(kuwaharaParams);
+
+        this.render("structure_tensor");
     }
 
     private render(textureKey = "original"): void {

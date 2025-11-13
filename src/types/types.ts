@@ -4,3 +4,14 @@ export interface ManagedTexture {
     height: number;
     format: GPUTextureFormat;
 }
+
+export interface KuwaharaParams {
+    kernelSize: number;
+    sharpness: number;
+    hardness: number;
+    alpha: number;
+    zeroCrossing: number;
+    zeta: number;
+    numSectors: number;
+    numPasses: number;
+}
