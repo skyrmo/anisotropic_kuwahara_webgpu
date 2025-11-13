@@ -4,6 +4,7 @@ import type { KuwaharaParams } from "../types/types";
 
 import structureTensorShaderCode from "../shaders/kuwahara/structure-tensor.wgsl?raw";
 import blurShaderCode from "../shaders/kuwahara/blur.wgsl?raw";
+import eigenvectorShaderCode from "../shaders/kuwahara/eigenvector.wgsl?raw";
 
 export class KuwaharaService {
     private core: WebGPUCore;
@@ -13,6 +14,7 @@ export class KuwaharaService {
     private structureTensorPipeline!: GPUComputePipeline;
     private blurHorizontalPipeline!: GPUComputePipeline;
     private blurVerticalPipeline!: GPUComputePipeline;
+    private eigenvectorPipeline!: GPUComputePipeline;
 
     // Buffers
     private kuwaharaParamsBuffer!: GPUBuffer;
@@ -21,6 +23,7 @@ export class KuwaharaService {
     private structureTensorTexture!: GPUTexture;
     private blurHorizontalTexture!: GPUTexture;
     private blurVerticalTexture!: GPUTexture;
+    private eigenvectorTexture!: GPUTexture;
 
     // Parameters
     private kuwaharaParams!: KuwaharaParams;
@@ -67,6 +70,21 @@ export class KuwaharaService {
             compute: {
                 module: blurShaderModule,
                 entryPoint: "verticalMain",
+            },
+        });
+
+        // create pipelines
+        const eigenvectorShaderModule = device.createShaderModule({
+            label: "Eigenvector shader module",
+            code: eigenvectorShaderCode,
+        });
+
+        // Create compute pipelines
+        this.eigenvectorPipeline = device.createComputePipeline({
+            layout: "auto",
+            compute: {
+                module: eigenvectorShaderModule,
+                entryPoint: "computeMain",
             },
         });
     }
@@ -216,7 +234,7 @@ export class KuwaharaService {
         await device.queue.onSubmittedWorkDone();
 
         // Store output
-        const textureKey = isHorizontal ? "horizontal_blur" : "vertical_blur";
+        const textureKey = isHorizontal ? "horizontal_blur" : "blur_output";
         if (isHorizontal) {
             this.blurHorizontalTexture = outputTexture;
         } else {
@@ -231,7 +249,59 @@ export class KuwaharaService {
         });
     }
 
-    private async runEigenvectorAnalysis(): Promise<void> {}
+    private async runEigenvectorAnalysis(): Promise<void> {
+        const device = this.core.getDevice();
+
+        // Get input texture
+        const inputTexture = this.textureManager.getTexture("blur_output");
+
+        if (!inputTexture) {
+            throw new Error(`Input texture not found for blur output`);
+        }
+
+        // Create output texture
+        const outputTexture = device.createTexture({
+            size: { width: inputTexture.width, height: inputTexture.height },
+            format: "rgba16float",
+            usage:
+                GPUTextureUsage.STORAGE_BINDING |
+                GPUTextureUsage.TEXTURE_BINDING |
+                GPUTextureUsage.COPY_SRC,
+        });
+
+        // Execute blur pass with appropriate pipeline
+        const pipeline = this.eigenvectorPipeline;
+
+        const encoder = device.createCommandEncoder();
+        const pass = encoder.beginComputePass();
+        pass.setPipeline(pipeline);
+
+        pass.setBindGroup(
+            0,
+            device.createBindGroup({
+                layout: pipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: inputTexture.texture.createView() },
+                    { binding: 1, resource: outputTexture.createView() },
+                ],
+            }),
+        );
+
+        const workgroupsX = Math.ceil(inputTexture.width / 8);
+        const workgroupsY = Math.ceil(inputTexture.height / 8);
+        pass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        pass.end();
+
+        device.queue.submit([encoder.finish()]);
+        await device.queue.onSubmittedWorkDone();
+
+        this.textureManager.setTexture("eigenvector_output", {
+            texture: outputTexture,
+            width: inputTexture.width,
+            height: inputTexture.height,
+            format: "rgba16float",
+        });
+    }
 
     private async runKuwaharaFiltering(): Promise<void> {
         console.log(this.kuwaharaParams);
