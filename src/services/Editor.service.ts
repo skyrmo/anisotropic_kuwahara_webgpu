@@ -40,7 +40,7 @@ export class ImageEditorService {
     async runKuwaharaFilter(kuwaharaParams: KuwaharaParams) {
         await this.kuwahara.runKuwahara(kuwaharaParams);
 
-        this.render("eigenvector_output");
+        this.render("kuwahara_output");
     }
 
     private render(textureKey = "original"): void {

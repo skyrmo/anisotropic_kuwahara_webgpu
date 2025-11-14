@@ -1,6 +1,6 @@
 <template>
     <div class="image-editor">
-        <div class="controls">
+        <div class="controls-section">
             <input
                 ref="fileInput"
                 type="file"
@@ -9,14 +9,6 @@
                 style="display: none"
             />
             <button @click="selectImage" class="select-button">Select Image</button>
-
-            <div v-if="error" class="error">
-                {{ error }}
-            </div>
-
-            <div v-if="loading || processing" class="loading">
-                {{ loading ? "Loading image..." : "Applying Kuwahara filter..." }}
-            </div>
 
             <!-- Kuwahara parameter controls -->
             <div v-if="imageLoaded" class="shader-controls">
@@ -38,12 +30,22 @@
                     />
                 </div>
             </div>
+
+            <div v-if="error" class="error">
+                {{ error }}
+            </div>
+
+            <div v-if="loading || processing" class="loading">
+                {{ loading ? "Loading image..." : "Applying Kuwahara filter..." }}
+            </div>
         </div>
 
-        <div class="canvas-container">
-            <canvas ref="canvas"></canvas>
-            <div v-if="!imageLoaded" class="placeholder">
-                Select an image to display
+        <div class="canvas-section">
+            <div class="canvas-wrapper">
+                <canvas ref="canvas"></canvas>
+                <div v-if="!imageLoaded" class="placeholder">
+                    Select an image to display
+                </div>
             </div>
         </div>
     </div>
@@ -66,28 +68,26 @@ let imageEditor: ImageEditorService | null = null;
 
 // --- Kuwahara Params and slider settings ---
 const kuwaharaParams = ref<KuwaharaParams>({
-    kernelSize: 4,
+    kernelSize: 10,
     sharpness: 0.8,
     hardness: 0.5,
-    alpha: 1.0,
-    zeroCrossing: 0.0,
-    zeta: 1.0,
-    numSectors: 8,
-    numPasses: 1,
+    alpha: 4.0,
+    zeroCrossing: 0.1,
+    zeta: 0.05,
+    sigma: 5.0,
 });
 
 const sliderRanges: Record<
     keyof KuwaharaParams,
     { min: number; max: number; step: number }
 > = {
-    kernelSize: { min: 1, max: 16, step: 1 },
-    sharpness: { min: 0, max: 2, step: 0.01 },
-    hardness: { min: 0, max: 1, step: 0.01 },
-    alpha: { min: 0, max: 1, step: 0.01 },
-    zeroCrossing: { min: 0, max: 1, step: 0.01 },
-    zeta: { min: 0, max: 3, step: 0.01 },
-    numSectors: { min: 1, max: 16, step: 1 },
-    numPasses: { min: 1, max: 5, step: 1 },
+    kernelSize: { min: 1, max: 160, step: 1 },
+    sharpness: { min: 0.1, max: 20.0, step: 0.1 },
+    hardness: { min: 0.1, max: 20.0, step: 0.1 },
+    alpha: { min: 0.01, max: 10.0, step: 0.01 },
+    zeroCrossing: { min: 0, max: 3.14, step: 0.1 },
+    zeta: { min: 0.01, max: 6.0, step: 0.01 },
+    sigma: { min: 0.5, max: 200.0, step: 0.1 },
 };
 
 // --- Lifecycle ---
@@ -173,20 +173,26 @@ const applyKuwaharaFilter = async () => {
 <style scoped>
 .image-editor {
     display: flex;
-    flex-direction: column;
-    align-items: center;
+    height: 100vh;
+    width: stretch;
     gap: 1rem;
+    justify-content: space-between;
 }
 
-.controls {
+.controls-section {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 0.75rem;
 }
 
+.select-button {
+    margin: 1rem 4rem;
+}
+
 .shader-controls {
-    width: 300px;
+    max-width: 300px;
     border-radius: 8px;
     padding: 1rem;
 }
@@ -202,8 +208,18 @@ const applyKuwaharaFilter = async () => {
     margin-bottom: 0.25rem;
 }
 
-.canvas-container {
-    position: relative;
+.canvas-section {
+    flex: 1 0 auto;
+    display: flex;
+}
+.canvas {
+    max-width: 100%;
+}
+.canvas-wrapper {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .placeholder {

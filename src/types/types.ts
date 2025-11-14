@@ -12,6 +12,5 @@ export interface KuwaharaParams {
     alpha: number;
     zeroCrossing: number;
     zeta: number;
-    numSectors: number;
-    numPasses: number;
+    sigma: number;
 }

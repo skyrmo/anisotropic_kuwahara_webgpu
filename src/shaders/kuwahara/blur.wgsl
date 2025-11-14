@@ -9,8 +9,7 @@ struct KuwaharaParams {
     alpha: f32,
     zeroCrossing: f32,
     zeta: f32,
-    numSectors: i32,
-    numPasses: i32,
+    sigma: f32,
 }
 
 
@@ -65,13 +64,12 @@ fn verticalBlur(coords: vec2i, texSize: vec2i, sigma: f32, radius: i32) -> vec4f
 fn horizontalMain(@builtin(global_invocation_id) globalId: vec3u) {
     let texSize = textureDimensions(inputTexture);
     let coords = vec2i(globalId.xy);
-    let sigma = f32(kuwaharaParams.kernelSize) * 0.3;
 
     if (coords.x >= i32(texSize.x) || coords.y >= i32(texSize.y)) {
         return;
     }
 
-    let result = horizontalBlur(coords, vec2i(texSize), sigma, kuwaharaParams.kernelSize);
+    let result = horizontalBlur(coords, vec2i(texSize), kuwaharaParams.sigma, kuwaharaParams.kernelSize);
     textureStore(outputTexture, coords, result);
 }
 
@@ -79,12 +77,11 @@ fn horizontalMain(@builtin(global_invocation_id) globalId: vec3u) {
 fn verticalMain(@builtin(global_invocation_id) globalId: vec3u) {
     let texSize = textureDimensions(inputTexture);
     let coords = vec2i(globalId.xy);
-    let sigma = f32(kuwaharaParams.kernelSize) * 0.3;
 
     if (coords.x >= i32(texSize.x) || coords.y >= i32(texSize.y)) {
         return;
     }
 
-    let result = verticalBlur(coords, vec2i(texSize), sigma, kuwaharaParams.kernelSize);
+    let result = verticalBlur(coords, vec2i(texSize), kuwaharaParams.sigma, kuwaharaParams.kernelSize);
     textureStore(outputTexture, coords, result);
 }
